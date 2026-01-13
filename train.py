@@ -69,4 +69,5 @@ trainer.train()
 
 # 5. Save only the LoRA weights (not the whole model!)
 # This demonstrates the storage efficiency claim of the paper
-torch.save(model.state_dict(), "lora_weights_only.pt")
+lora_state_dict = {k: v for k, v in model.state_dict().items() if "lora" in k}
+torch.save(lora_state_dict, "lora_weights_r4.pt")
