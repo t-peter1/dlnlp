@@ -13,14 +13,14 @@ LR = 2e-4
 
 # 2. Prepare Data (E2E NLG)
 # E2E dataset structure: "meaning_representation" (input) -> "human_reference" (target)
-dataset = load_dataset("tuetschek/e2e_nlg")
+dataset = load_dataset("GEM/e2e_nlg", trust_remote_code=True)
 
 tokenizer = GPT2Tokenizer.from_pretrained(MODEL_ID)
 tokenizer.pad_token = tokenizer.eos_token
 
 def preprocess_function(examples):
-    # Format: "Type[Restaurant] ... || Reference: The restaurant is..."
-    inputs = [f"{mr} || {ref} {tokenizer.eos_token}" for mr, ref in zip(examples['meaning_representation'], examples['human_reference'])]
+    # GEM/e2e_nlg uses 'meaning_representation' for input and 'target' for output
+    inputs = [f"{mr} || {ref} {tokenizer.eos_token}" for mr, ref in zip(examples['meaning_representation'], examples['target'])]
     
     model_inputs = tokenizer(inputs, max_length=512, truncation=True, padding="max_length")
     return model_inputs
@@ -31,6 +31,11 @@ val_dataset = dataset["validation"].select(range(500)).map(preprocess_function, 
 
 # 3. Prepare Model
 model = GPT2LMHeadModel.from_pretrained(MODEL_ID)
+
+print("Freezing base model weights...")
+for param in model.parameters():
+    param.requires_grad = False
+    
 model = inject_lora(model, rank=LORA_RANK, alpha=LORA_ALPHA)
 model.to("cuda")
 
@@ -46,7 +51,7 @@ training_args = TrainingArguments(
     num_train_epochs=EPOCHS,
     logging_steps=50,
     save_strategy="epoch",
-    evaluation_strategy="epoch",
+    eval_strategy="epoch",
     fp16=True, # V100 supports fp16, gives 2x speedup
     report_to="none"
 )
