@@ -26,8 +26,12 @@ def evaluate_model():
     tokenizer.pad_token = tokenizer.eos_token
 
     checkpoint = torch.load(CKPT_PATH, map_location=device)
-    state_dict = checkpoint["state_dict"] if "state_dict" in checkpoint else checkpoint
-    meta = checkpoint.get("meta", {}) if isinstance(checkpoint, dict) else {}
+    if isinstance(checkpoint, dict) and "state_dict" in checkpoint:
+        state_dict = checkpoint["state_dict"]
+        meta = checkpoint.get("meta", {})
+    else:
+        state_dict = checkpoint
+        meta = {}
 
     rank = meta.get("rank_init", RANK_INIT)
     alpha = meta.get("alpha", ALPHA)
@@ -69,7 +73,7 @@ def evaluate_model():
 
     cols = dataset.column_names
     mr_col = "meaning_representation" if "meaning_representation" in cols else "mr"
-    ref_col = "human_reference" if "human_reference" in cols else "target"
+    ref_col = "references" if "references" in cols else "target"
 
     predictions = []
     references = []
@@ -85,15 +89,18 @@ def evaluate_model():
             output = model.generate(
                 input_ids,
                 attention_mask=attention_mask,
-                max_length=150,
+                max_new_tokens=40,
                 num_beams=5,
                 early_stopping=True,
-                no_repeat_ngram_size=2,
+                no_repeat_ngram_size=3,
+                length_penalty=0.8,
+                eos_token_id=tokenizer.eos_token_id,
+                pad_token_id=tokenizer.eos_token_id,
             )
 
         generated_tokens = output[0][input_len:]
         full_text = tokenizer.decode(generated_tokens, skip_special_tokens=True).strip()
-        clean_sentence = full_text.split(".")[0] + "." if "." in full_text else full_text
+        clean_sentence = full_text
 
         predictions.append(clean_sentence)
         ref = example[ref_col]
