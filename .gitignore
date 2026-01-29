@@ -1,2 +1,23 @@
+# LoRA artifacts
 lora_weights_only.pt
 lora_gpt2_e2e/
+
+# AdaLoRA artifacts
+adalora_checkpoint.pt
+adalora_*.pt
+adalora_*/
+
+# HuggingFace Trainer outputs
+checkpoint-*/
+runs/
+wandb/
+
+# Python cache
+__pycache__/
+*.pyc
+
+# Jupyter
+.ipynb_checkpoints/
+*.pt
+*.pyc
+venv/

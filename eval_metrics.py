@@ -7,10 +7,10 @@ from src.model import inject_lora
 
 # --- CONFIG ---
 MODEL_ID = "gpt2-medium"
-WEIGHTS_PATH = "lora_weights_only_fixed.pt"
-RANK = 4                                    # Match your training rank (4 or 32)
+WEIGHTS_PATH = "lora_weights_r4_preproccess.pt"
+RANK = 4     
 ALPHA = 32
-NUM_SAMPLES = 100 
+NUM_SAMPLES = 100
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
 
@@ -37,7 +37,7 @@ def evaluate_model():
 
     cols = dataset.column_names
     mr_col = "meaning_representation" if "meaning_representation" in cols else "mr"
-    ref_col = "human_reference" if "human_reference" in cols else "target"
+    ref_col = "references" if "references" in cols else "target"
     
     print(f"DEBUG: Using columns Input='{mr_col}' and Target='{ref_col}'")
 
@@ -56,23 +56,30 @@ def evaluate_model():
         attention_mask = torch.ones_like(input_ids)
 
         with torch.no_grad():
-            output = model.generate(
-                input_ids,
-                attention_mask=attention_mask,
-                max_length=150,
-                num_beams=5,            
-                early_stopping=True,
-                no_repeat_ngram_size=2
-            )
+            with torch.no_grad():
+                output = model.generate(
+                    input_ids,
+                    attention_mask=attention_mask,
+                    max_new_tokens=40,
+                    num_beams=5,            
+                    early_stopping=True,
+                    no_repeat_ngram_size=3,
+                    length_penalty=0.8, 
+                    eos_token_id=tokenizer.eos_token_id,
+                    pad_token_id=tokenizer.eos_token_id,
+                )
 
         generated_tokens = output[0][input_length:]
         full_text = tokenizer.decode(generated_tokens, skip_special_tokens=True).strip()
-        
+
+        """
         # the model generates a long response, which BLEU does not like
         if "." in full_text:
             clean_sentence = full_text.split(".")[0] + "."
         else:
             clean_sentence = full_text
+        """
+        clean_sentence = full_text
             
         predictions.append(clean_sentence)
         
