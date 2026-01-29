@@ -79,3 +79,44 @@ class AdaLoRAConv1D(nn.Module):
         mask = self.rank_mask.clone()
         mask[idxs_to_zero] = 0.0
         self.rank_mask.data.copy_(mask)
+
+    def svd_compress(self, target_rank: int):
+        with torch.no_grad():
+            mask_col = self.rank_mask.view(1, -1)
+            mask_row = self.rank_mask.view(-1, 1)
+    
+            A = self.lora_A * mask_col          # [in, r]
+            B = self.lora_B * mask_row          # [r, out]
+    
+            delta_w = A @ B                     # [in, out]
+    
+            U, S, Vh = torch.linalg.svd(delta_w, full_matrices=False)
+    
+            k = min(target_rank, S.numel())
+            U_k = U[:, :k]
+            S_k = S[:k]
+            Vh_k = Vh[:k, :]
+    
+            sqrt_S = torch.diag(torch.sqrt(S_k))
+    
+            new_A = U_k @ sqrt_S                # [in, k]
+            new_B = sqrt_S @ Vh_k               # [k, out]
+    
+            # Replace parameters
+            self.rank = k
+            self.lora_A = nn.Parameter(new_A.contiguous())
+            self.lora_B = nn.Parameter(new_B.contiguous())
+    
+            # IMPORTANT: replace buffer correctly
+            if "rank_mask" in self._buffers:
+                del self._buffers["rank_mask"]
+    
+            self.register_buffer(
+                "rank_mask",
+                torch.ones(k, device=self.lora_A.device),
+            )
+    
+            self.scaling = self.alpha / k
+
+            assert self.lora_A.shape[1] == self.lora_B.shape[0] == self.rank_mask.numel()
+

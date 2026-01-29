@@ -26,21 +26,34 @@ def evaluate_model():
     tokenizer.pad_token = tokenizer.eos_token
 
     checkpoint = torch.load(CKPT_PATH, map_location=device)
-    
-    if isinstance(checkpoint, dict) and "state_dict" in checkpoint:
-        state_dict = checkpoint["state_dict"]
-        meta = checkpoint.get("meta", {})
-    else:
-        state_dict = checkpoint
-        meta = {}
-        
+    state_dict = checkpoint["state_dict"] if "state_dict" in checkpoint else checkpoint
+    meta = checkpoint.get("meta", {}) if isinstance(checkpoint, dict) else {}
+
     rank = meta.get("rank_init", RANK_INIT)
     alpha = meta.get("alpha", ALPHA)
 
     model = GPT2LMHeadModel.from_pretrained(MODEL_ID)
+
+    from src.adalora_model import AdaLoRAConv1D, inject_adalora
     model, _ = inject_adalora(model, rank=rank, alpha=alpha)
+
+    with torch.no_grad():
+        for name, module in model.named_modules():
+            if isinstance(module, AdaLoRAConv1D):
+                mask_key = f"{name}.rank_mask"
+                if mask_key in state_dict:
+                    checkpoint_rank = state_dict[mask_key].shape[0]
+                    if checkpoint_rank != module.rank:
+                        in_features = module.original_layer.nx
+                        out_features = module.original_layer.nf
+
+                        module.lora_A = torch.nn.Parameter(torch.empty(in_features, checkpoint_rank))
+                        module.lora_B = torch.nn.Parameter(torch.empty(checkpoint_rank, out_features))
+                        module.rank_mask = torch.nn.Parameter(torch.empty(checkpoint_rank))
+                        module.rank = checkpoint_rank
+
     model.load_state_dict(state_dict, strict=False)
-    # sanity check: how many mask entries are active?
+
     active = 0
     total = 0
     for name, p in model.named_buffers():

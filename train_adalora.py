@@ -41,6 +41,7 @@ class AdaLoRACallback(TrainerCallback):
 
     def on_step_end(self, args, state, control, **kwargs):
         self.controller.step_end(state.global_step, state.max_steps)
+        #self.controller.maybe_svd_compress(state.global_step, state.max_steps)
         return control
 
 
@@ -88,7 +89,8 @@ def main():
         logging_steps=50,
         save_strategy="epoch",
         eval_strategy="epoch",
-        fp16=True,
+        fp16=False,
+        bf16=False,
         report_to="none",
     )
 
@@ -103,30 +105,18 @@ def main():
 
     trainer.train()
 
-    # Save AdaLoRA weights + masks (robust: pull from trainer.model)
-    state = trainer.model.state_dict()
-    mask_keys = [k for k in state if "rank_mask" in k]
-    print(f"[save] total keys: {len(state)}, rank_mask keys: {len(mask_keys)}, sample: {mask_keys[:10]}")
+    model = trainer.model
+    model.eval()
 
-    adalora_state = {}
-    for name, module in trainer.model.named_modules():
-        if isinstance(module, AdaLoRAConv1D):
-            for k, v in module.state_dict().items():
-                adalora_state[f"{name}.{k}"] = v.cpu()
+    with torch.no_grad():
+        for m in model.modules():
+            if hasattr(m, "svd_compress"):
+                m.svd_compress(target_rank=m.rank)
+                if hasattr(m, "rank_mask"):
+                    del m.rank_mask
 
-    saved_mask_count = sum("rank_mask" in k for k in adalora_state)
-    print(f"[save] filtered keys: {len(adalora_state)}, rank_mask saved: {saved_mask_count}")
-
-    meta = {
-        "rank_init": LORA_RANK_INIT,
-        "rank_target": LORA_RANK_TARGET,
-        "alpha": LORA_ALPHA,
-        "update_interval": UPDATE_INTERVAL,
-        "warmup_ratio": WARMUP_RATIO,
-        "model_id": MODEL_ID
-    }
-    torch.save({"state_dict": adalora_state, "meta": meta}, "adalora_checkpoint.pt")
-
+    trainer.save_model("./adalora_gpt2_e2e")
+    tokenizer.save_pretrained("./adalora_gpt2_e2e")
 
 
 if __name__ == "__main__":
