@@ -178,13 +178,28 @@ def main():
 
     trainer.train()
 
-    # Adapter-only checkpoint for eval_metrics_adalora.py compatibility
+    # Adapter-only checkpoint for eval compatibility
     state = model.state_dict()
+    lam_keys = [k for k in state if "lambda_vals" in k]
+    mask_keys = [k for k in state if "rank_mask" in k]
+    print(f"[save] total keys: {len(state)}, lambda keys: {len(lam_keys)}, mask keys: {len(mask_keys)}")
+
+    # Lambda diagnostics
+    all_lam = torch.cat([p.detach().flatten() for n, p in model.named_parameters() if "lambda_vals" in n])
+    nonzero = int((all_lam != 0).sum().item())
+    all_mask = torch.cat([b.detach().flatten() for n, b in model.named_buffers() if "rank_mask" in n])
+    active = int((all_mask > 0).sum().item())
+    print(f"[lambda] mean={all_lam.abs().mean().item():.4f} max={all_lam.abs().max().item():.4f} nonzero={nonzero}/{all_lam.numel()}")
+    print(f"[mask] active={active}/{all_mask.numel()}")
+
     adalora_state = {}
     for name, module in model.named_modules():
         if isinstance(module, AdaLoRAConv1D):
             for k, v in module.state_dict().items():
                 adalora_state[f"{name}.{k}"] = v.cpu()
+
+    saved_lam_count = sum("lambda_vals" in k for k in adalora_state)
+    print(f"[save] filtered keys: {len(adalora_state)}, lambda saved: {saved_lam_count}")
 
     meta = {
         "model_id": MODEL_ID,

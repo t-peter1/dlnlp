@@ -137,11 +137,20 @@ def main():
 
     trainer.train()
 
-    # Save AdaLoRA weights + masks (adapter-only checkpoint)
+    # Save AdaLoRA weights (adapter-only checkpoint)
     model = trainer.model
     state = model.state_dict()
+    lam_keys = [k for k in state if "lambda_vals" in k]
     mask_keys = [k for k in state if "rank_mask" in k]
-    print(f"[save] total keys: {len(state)}, rank_mask keys: {len(mask_keys)}, sample: {mask_keys[:10]}")
+    print(f"[save] total keys: {len(state)}, lambda keys: {len(lam_keys)}, mask keys: {len(mask_keys)}")
+
+    # Lambda diagnostics
+    all_lam = torch.cat([p.detach().flatten() for n, p in model.named_parameters() if "lambda_vals" in n])
+    nonzero = int((all_lam != 0).sum().item())
+    all_mask = torch.cat([b.detach().flatten() for n, b in model.named_buffers() if "rank_mask" in n])
+    active = int((all_mask > 0).sum().item())
+    print(f"[lambda] mean={all_lam.abs().mean().item():.4f} max={all_lam.abs().max().item():.4f} nonzero={nonzero}/{all_lam.numel()}")
+    print(f"[mask] active={active}/{all_mask.numel()}")
 
     adalora_state = {}
     for name, module in model.named_modules():
@@ -149,8 +158,8 @@ def main():
             for k, v in module.state_dict().items():
                 adalora_state[f"{name}.{k}"] = v.cpu()
 
-    saved_mask_count = sum("rank_mask" in k for k in adalora_state)
-    print(f"[save] filtered keys: {len(adalora_state)}, rank_mask saved: {saved_mask_count}")
+    saved_lam_count = sum("lambda_vals" in k for k in adalora_state)
+    print(f"[save] filtered keys: {len(adalora_state)}, lambda saved: {saved_lam_count}")
 
     meta = {
         "rank_init": LORA_RANK_INIT,

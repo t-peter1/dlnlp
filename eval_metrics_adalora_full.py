@@ -44,27 +44,31 @@ def evaluate_model():
     with torch.no_grad():
         for name, module in model.named_modules():
             if isinstance(module, AdaLoRAConv1D):
-                mask_key = f"{name}.rank_mask"
-                if mask_key in state_dict:
-                    checkpoint_rank = state_dict[mask_key].shape[0]
+                lam_key = f"{name}.lambda_vals"
+                if lam_key in state_dict:
+                    checkpoint_rank = state_dict[lam_key].shape[0]
                     if checkpoint_rank != module.rank:
-                        in_features = module.original_layer.nx
-                        out_features = module.original_layer.nf
+                        in_features = module.original_layer.weight.shape[0]
+                        out_features = module.original_layer.weight.shape[1]
 
-                        module.lora_A = torch.nn.Parameter(torch.empty(in_features, checkpoint_rank))
-                        module.lora_B = torch.nn.Parameter(torch.empty(checkpoint_rank, out_features))
-                        module.rank_mask = torch.nn.Parameter(torch.empty(checkpoint_rank))
+                        module.Q = torch.nn.Parameter(torch.empty(checkpoint_rank, in_features))
+                        module.P = torch.nn.Parameter(torch.empty(out_features, checkpoint_rank))
+                        module.lambda_vals = torch.nn.Parameter(torch.empty(checkpoint_rank))
                         module.rank = checkpoint_rank
+                        if "rank_mask" in module._buffers:
+                            del module._buffers["rank_mask"]
+                        module.register_buffer("rank_mask", torch.ones(checkpoint_rank))
+                        module.scaling = module.alpha / checkpoint_rank
 
     model.load_state_dict(state_dict, strict=False)
 
     active = 0
     total = 0
-    for name, p in model.named_buffers():
+    for name, b in model.named_buffers():
         if "rank_mask" in name:
-            active += int((p > 0).sum().item())
-            total += p.numel()
-    print(f"[eval] active rank directions: {active}/{total}")
+            active += int((b > 0).sum().item())
+            total += b.numel()
+    print(f"[eval] active mask directions: {active}/{total}")
     model.to(device)
     model.eval()
 

@@ -287,6 +287,13 @@ def run_adalora_smoke():
     eval_metrics = trainer.evaluate()
     init_loss, final_loss, delta = first_loss_and_last(trainer.state.log_history)
 
+    # Lambda diagnostics
+    all_lam = torch.cat([p.detach().flatten() for n, p in model.named_parameters() if "lambda_vals" in n])
+    nonzero = int((all_lam != 0).sum().item())
+    all_mask = torch.cat([b.detach().flatten() for n, b in model.named_buffers() if "rank_mask" in n])
+    active = int((all_mask > 0).sum().item())
+    print(f"[AdaLoRA] lambda mean={all_lam.abs().mean().item():.4f} max={all_lam.abs().max().item():.4f} nonzero={nonzero}/{all_lam.numel()} active_mask={active}/{all_mask.numel()}")
+
     # Save AdaLoRA adapter state (A/B + mask)
     state = model.state_dict()
     adalora_state = {}
