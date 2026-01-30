@@ -4,7 +4,7 @@ from src.model import inject_lora
 
 # --- CONFIG ---
 MODEL_ID = "gpt2-medium"
-WEIGHTS_PATH = "lora_weights_only_fixed.pt"
+WEIGHTS_PATH = "lora_weights_r4_preproccess.pt"
 RANK = 4 
 ALPHA = 32
 
