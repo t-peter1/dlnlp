@@ -5,21 +5,19 @@ from transformers import GPT2LMHeadModel, GPT2Tokenizer
 MODEL_ID = "gpt2-medium"
 device = "cuda" if torch.cuda.is_available() else "cpu"
 
-# 1. Load Raw GPT-2 (No LoRA injection!)
+# load Raw GPT-2
 print("Loading raw GPT-2 Medium...")
 tokenizer = GPT2Tokenizer.from_pretrained(MODEL_ID)
 model = GPT2LMHeadModel.from_pretrained(MODEL_ID)
 model.to(device)
 model.eval()
 
-# 2. The Input
 text_input = "name[Blue Spice] || eatType[pub] || food[Chinese] || priceRange[cheap]"
 print(f"\nINPUT: {text_input}")
 
 input_ids = tokenizer.encode(text_input, return_tensors='pt').to(device)
 attention_mask = torch.ones_like(input_ids)
 
-# 3. Generate
 print("Generating...")
 with torch.no_grad():
     output = model.generate(
